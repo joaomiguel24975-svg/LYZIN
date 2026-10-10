@@ -1,0 +1,154 @@
+
+#include <array>
+#include <cstdint>
+#include <iomanip>
+#include <iostream>
+#include <stdexcept>
+#include <string>
+
+class VirtualPC {
+public:
+    static constexpr std::size_t RAM_SIZE = 256;
+    static constexpr std::size_t REGISTER_COUNT = 4;
+
+    enum Opcode : std::uint8_t {
+        LDI = 0x01, // LDI registrador, valor
+        ADD = 0x02, // ADD destino, origem
+        OUT = 0x03, // OUT registrador
+        HLT = 0xFF  // Encerrar
+    };
+
+private:
+    std::array<std::uint8_t, RAM_SIZE> ram{};
+    std::array<std::uint8_t, REGISTER_COUNT> registers{};
+    std::uint16_t pc = 0;
+    bool halted = false;
+
+    std::uint8_t fetch() {
+        if (pc >= RAM_SIZE) {
+            throw std::runtime_error("Contador de programa fora da RAM.");
+        }
+        return ram[pc++];
+    }
+
+    void checkRegister(std::uint8_t reg) const {
+        if (reg >= REGISTER_COUNT) {
+            throw std::runtime_error("Registrador invalido.");
+        }
+    }
+
+public:
+    void loadProgram(const std::uint8_t* program, std::size_t size) {
+        if (size > RAM_SIZE) {
+            throw std::runtime_error("Programa maior que a RAM.");
+        }
+
+        ram.fill(0);
+        registers.fill(0);
+        pc = 0;
+        halted = false;
+
+        for (std::size_t i = 0; i < size; ++i) {
+            ram[i] = program[i];
+        }
+    }
+
+    void run() {
+        while (!halted) {
+            const std::uint8_t opcode = fetch();
+
+            switch (opcode) {
+            case LDI: {
+                const auto reg = fetch();
+                const auto value = fetch();
+                checkRegister(reg);
+                registers[reg] = value;
+                break;
+            }
+
+            case ADD: {
+                const auto destination = fetch();
+                const auto source = fetch();
+                checkRegister(destination);
+                checkRegister(source);
+
+                // A soma permanece dentro de 8 bits.
+                registers[destination] = static_cast<std::uint8_t>(
+                    registers[destination] + registers[source]
+                );
+                break;
+            }
+
+            case OUT: {
+                const auto reg = fetch();
+                checkRegister(reg);
+
+                std::cout << "Saida do PC virtual: "
+                          << static_cast<unsigned>(registers[reg])
+                          << " (decimal), 0x"
+                          << std::hex << std::uppercase
+                          << std::setw(2) << std::setfill('0')
+                          << static_cast<unsigned>(registers[reg])
+                          << std::dec << '\n';
+                break;
+            }
+
+            case HLT:
+                halted = true;
+                break;
+
+            default:
+                throw std::runtime_error(
+                    "Opcode desconhecido na posicao " +
+                    std::to_string(pc - 1)
+                );
+            }
+        }
+    }
+
+    void printState() const {
+        std::cout << "\n=== Estado final do PC ===\n";
+        std::cout << "PC: " << pc << '\n';
+
+        for (std::size_t i = 0; i < REGISTER_COUNT; ++i) {
+            std::cout << 'R' << i << " = "
+                      << static_cast<unsigned>(registers[i]) << '\n';
+        }
+
+        std::cout << "RAM: " << RAM_SIZE << " bytes\n";
+        std::cout << "Estado: desligado normalmente\n";
+    }
+};
+
+int main() {
+    try {
+        // Programa de maquina:
+        // LDI R0, 42
+        // LDI R1, 18
+        // ADD R0, R1
+        // OUT R0
+        // HLT
+        const std::uint8_t program[] = {
+            VirtualPC::LDI, 0, 42,
+            VirtualPC::LDI, 1, 18,
+            VirtualPC::ADD, 0, 1,
+            VirtualPC::OUT, 0,
+            VirtualPC::HLT
+        };
+
+        VirtualPC pc;
+        pc.loadProgram(program, sizeof(program));
+
+        std::cout << "VirtualPC Emulator v1.0\n";
+        std::cout << "CPU virtual de 8 bits iniciada.\n\n";
+
+        pc.run();
+        pc.printState();
+
+    } catch (const std::exception& e) {
+        std::cerr << "Erro do emulador: " << e.what() << '\n';
+        return 1;
+    }
+
+    return 0;
+}
